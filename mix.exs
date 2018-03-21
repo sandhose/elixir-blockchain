@@ -22,6 +22,7 @@ defmodule Blockchain.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:ed25519, "~> 1.2"},
       {:dialyxir, "~> 0.5", only: [:dev], runtime: false}
     ]
   end

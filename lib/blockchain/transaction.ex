@@ -3,13 +3,30 @@ defmodule Blockchain.Transaction do
   Represents one transaction within the chain.
   """
 
+  # FIXME: because of the way they are defined, transactions are replayable
   @type t :: %Blockchain.Transaction{
-          sender: binary,
-          recipient: binary,
-          amount: number
+          sender: Ed25519.key(),
+          recipient: Ed25519.key(),
+          amount: number,
+          signature: Ed25519.signature() | nil
         }
 
-  defstruct [:sender, :recipient, :amount]
+  defstruct [:sender, :recipient, :amount, :signature]
+
+  def payload(%__MODULE__{sender: sender, recipient: recipient, amount: amount}) do
+    sender <> recipient <> <<amount::float>>
+  end
+
+  @spec sign(transaction :: t(), key :: Ed25519.key()) :: t()
+  def sign(transaction, key) do
+    signature = Ed25519.signature(payload(transaction), key, transaction.sender)
+    %__MODULE__{transaction | signature: signature}
+  end
+
+  @spec valid?(transaction :: t()) :: boolean
+  def valid?(transaction) do
+    Ed25519.valid_signature?(transaction.signature, payload(transaction), transaction.sender)
+  end
 
   def hash(t) do
     :crypto.hash_init(:sha256)
@@ -21,10 +38,9 @@ defmodule Blockchain.Transaction do
     Enum.reduce(transactions, sha, fn t, sha -> hash(sha, t) end)
   end
 
-  def hash(sha, %__MODULE__{sender: sender, recipient: recipient, amount: amount}) do
+  def hash(sha, transaction) do
     sha
-    |> :crypto.hash_update(sender)
-    |> :crypto.hash_update(recipient)
-    |> :crypto.hash_update(<<amount::float>>)
+    |> :crypto.hash_update(payload(transaction))
+    |> :crypto.hash_update(transaction.signature)
   end
 end

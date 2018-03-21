@@ -39,7 +39,7 @@ defmodule Blockchain.Block do
   """
   @spec valid?(block :: t()) :: boolean
   def valid?(block) do
-    challenge(hash(block), 16)
+    challenge(hash(block), 16) and Enum.all?(block.transactions, &Transaction.valid?(&1))
   end
 
   defp challenge(_hash, 0), do: true
