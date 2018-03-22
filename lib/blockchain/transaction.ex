@@ -3,8 +3,7 @@ defmodule Blockchain.Transaction do
   Represents one transaction within the chain.
   """
 
-  # FIXME: because of the way they are defined, transactions are replayable
-  @type t :: %Blockchain.Transaction{
+  @type t :: %__MODULE__{
           timestamp: integer,
           sender: Ed25519.key(),
           recipient: Ed25519.key(),
@@ -18,18 +17,27 @@ defmodule Blockchain.Transaction do
             amount: 0.0,
             signature: <<0::size(512)>>
 
+  @spec new(
+          recipient :: Ed25519.key() | String.t(),
+          amount :: float | integer | String.t(),
+          priv :: Ed25519.key() | String.t()
+        ) :: t()
   def new(recipient, amount, priv)
-      when amount >= 0 and (is_float(amount) or is_integer(amount)) and byte_size(priv) == 32 and
+      when amount >= 0 and is_float(amount) and byte_size(priv) == 32 and
              byte_size(recipient) == 32 do
     sign(
       %__MODULE__{
         timestamp: System.system_time(:nanoseconds),
         sender: Ed25519.derive_public_key(priv),
         recipient: recipient,
-        amount: amount / 1
+        amount: amount
       },
       priv
     )
+  end
+
+  def new(recipient, amount, priv) when is_integer(amount) do
+    new(recipient, amount / 1, priv)
   end
 
   def new(recipient, amount, priv) when is_bitstring(amount) do
