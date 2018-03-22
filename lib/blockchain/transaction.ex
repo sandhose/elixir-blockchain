@@ -5,17 +5,49 @@ defmodule Blockchain.Transaction do
 
   # FIXME: because of the way they are defined, transactions are replayable
   @type t :: %Blockchain.Transaction{
+          timestamp: integer,
           sender: Ed25519.key(),
           recipient: Ed25519.key(),
           amount: number,
           signature: Ed25519.signature() | nil
         }
 
-  defstruct [:sender, :recipient, :amount, :signature]
+  defstruct [:timestamp, :sender, :recipient, :amount, :signature]
+
+  def new(recipient, amount, priv) when is_bitstring(recipient) do
+    new(Base.url_decode64!(recipient), amount, priv)
+  end
+
+  def new(recipient, amount, priv) when is_bitstring(priv) do
+    new(recipient, amount, Base.url_decode64!(priv))
+  end
+
+  def new(recipient, amount, priv) when is_bitstring(amount) do
+    new(recipient, String.to_float(amount), priv)
+  end
+
+  def new(recipient, amount, priv)
+      when amount >= 0 and (is_float(amount) or is_integer(amount)) and is_binary(priv) and
+             is_binary(recipient) do
+    sign(
+      %__MODULE__{
+        timestamp: System.system_time(:nanoseconds),
+        sender: Ed25519.derive_public_key(priv),
+        recipient: recipient,
+        amount: amount / 1
+      },
+      priv
+    )
+  end
 
   @spec payload(transaction :: t()) :: binary
-  def payload(%__MODULE__{sender: sender, recipient: recipient, amount: amount}) do
-    sender <> recipient <> <<amount::float>>
+  def payload(%__MODULE__{
+        timestamp: timestamp,
+        sender: sender,
+        recipient: recipient,
+        amount: amount
+      }) do
+    <<timestamp::unsigned-little-integer-size(64)>> <> sender <> recipient <> <<amount::float>>
   end
 
   @spec sign(transaction :: t(), key :: Ed25519.key()) :: t()
@@ -25,8 +57,8 @@ defmodule Blockchain.Transaction do
   end
 
   @spec valid?(transaction :: t()) :: boolean
-  def valid?(transaction) do
-    Ed25519.valid_signature?(transaction.signature, payload(transaction), transaction.sender)
+  def valid?(%__MODULE__{sender: sender, amount: amount, signature: signature} = tx) do
+    Ed25519.valid_signature?(signature, payload(tx), sender) and amount >= 0
   end
 
   def hash(t) do
