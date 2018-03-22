@@ -13,6 +13,7 @@ defmodule Blockchain.Transaction do
 
   defstruct [:sender, :recipient, :amount, :signature]
 
+  @spec payload(transaction :: t()) :: binary
   def payload(%__MODULE__{sender: sender, recipient: recipient, amount: amount}) do
     sender <> recipient <> <<amount::float>>
   end
@@ -42,5 +43,14 @@ defmodule Blockchain.Transaction do
     sha
     |> :crypto.hash_update(payload(transaction))
     |> :crypto.hash_update(transaction.signature)
+  end
+end
+
+defimpl String.Chars, for: Blockchain.Transaction do
+  def to_string(%{sender: snd, recipient: rcp, amount: amt, signature: sig}) do
+    snd = Base.url_encode64(snd, padding: false)
+    rcp = Base.url_encode64(rcp, padding: false)
+    sig = Base.url_encode64(sig, padding: false)
+    "#{snd} -#{amt}-> #{rcp} (sig: #{sig})"
   end
 end

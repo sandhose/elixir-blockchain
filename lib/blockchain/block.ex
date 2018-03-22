@@ -57,3 +57,23 @@ defmodule Blockchain.Block do
     end
   end
 end
+
+defimpl String.Chars, for: Blockchain.Block do
+  def to_string(%{transactions: txs, proof: proof, parent: parent} = block) do
+    parent = Base.url_encode64(parent, padding: false)
+
+    message =
+      if proof == 0 do
+        ["Block"]
+      else
+        hash = Blockchain.Block.hash(block) |> Base.url_encode64(padding: false)
+        ["Block #{hash}", "Proof: #{proof}"]
+      end ++
+        ["Parent: #{parent}"] ++
+        if Enum.empty?(txs),
+          do: ["No transaction"],
+          else: ["Transactions:"] ++ Enum.map(txs, &"  #{&1}")
+
+    Enum.join(message, "\n  ")
+  end
+end
