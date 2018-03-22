@@ -9,26 +9,18 @@ defmodule Blockchain.Transaction do
           sender: Ed25519.key(),
           recipient: Ed25519.key(),
           amount: number,
-          signature: Ed25519.signature() | nil
+          signature: Ed25519.signature()
         }
 
-  defstruct [:timestamp, :sender, :recipient, :amount, :signature]
-
-  def new(recipient, amount, priv) when is_bitstring(recipient) do
-    new(Base.url_decode64!(recipient), amount, priv)
-  end
-
-  def new(recipient, amount, priv) when is_bitstring(priv) do
-    new(recipient, amount, Base.url_decode64!(priv))
-  end
-
-  def new(recipient, amount, priv) when is_bitstring(amount) do
-    new(recipient, String.to_float(amount), priv)
-  end
+  defstruct timestamp: 0,
+            sender: <<0::size(256)>>,
+            recipient: <<0::size(256)>>,
+            amount: 0.0,
+            signature: <<0::size(512)>>
 
   def new(recipient, amount, priv)
-      when amount >= 0 and (is_float(amount) or is_integer(amount)) and is_binary(priv) and
-             is_binary(recipient) do
+      when amount >= 0 and (is_float(amount) or is_integer(amount)) and byte_size(priv) == 32 and
+             byte_size(recipient) == 32 do
     sign(
       %__MODULE__{
         timestamp: System.system_time(:nanoseconds),
@@ -38,6 +30,32 @@ defmodule Blockchain.Transaction do
       },
       priv
     )
+  end
+
+  def new(recipient, amount, priv) when is_bitstring(amount) do
+    # Parse amount formatted as float or integers
+    amount =
+      cond do
+        String.contains?(amount, ["e", "E"]) ->
+          String.to_float(amount)
+
+        # Add leading and closing zeros to parse things like ".5" or "1."
+        String.contains?(amount, ".") ->
+          String.to_float("0#{amount}0")
+
+        true ->
+          String.to_integer(amount)
+      end
+
+    new(recipient, amount, priv)
+  end
+
+  def new(recipient, amount, priv) when byte_size(priv) == 32 do
+    new(Base.url_decode64!(recipient), amount, priv)
+  end
+
+  def new(recipient, amount, priv) do
+    new(recipient, amount, Base.url_decode64!(priv))
   end
 
   @spec payload(transaction :: t()) :: binary
