@@ -87,12 +87,14 @@ defmodule Blockchain.Transaction do
     Ed25519.valid_signature?(signature, payload(tx), sender) and amount >= 0
   end
 
-  def hash(t) do
+  @spec hash(tx :: t() | [t()]) :: binary()
+  def hash(tx) do
     :crypto.hash_init(:sha256)
-    |> hash(t)
+    |> hash(tx)
     |> :crypto.hash_final()
   end
 
+  @spec hash(sha :: term(), tx :: t() | [t()]) :: term()
   def hash(sha, transactions) when is_list(transactions) do
     Enum.reduce(transactions, sha, fn t, sha -> hash(sha, t) end)
   end

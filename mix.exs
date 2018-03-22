@@ -31,7 +31,8 @@ defmodule Blockchain.MixProject do
     [
       {:ed25519, "~> 1.2"},
       {:dialyxir, "~> 0.5", only: [:dev], runtime: false},
-      {:excoveralls, "~> 0.8", only: :test}
+      {:excoveralls, "~> 0.8", only: :test},
+      {:ex_doc, "~> 0.16", only: :dev, runtime: false}
     ]
   end
 end
