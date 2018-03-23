@@ -3,6 +3,9 @@ defmodule Blockchain.Transaction do
   Represents one transaction within the chain.
   """
 
+  @reward 1.0
+  @rewarder <<0::size(256)>>
+
   @type t :: %__MODULE__{
           timestamp: integer,
           sender: Ed25519.key(),
@@ -84,7 +87,43 @@ defmodule Blockchain.Transaction do
 
   @spec valid?(transaction :: t()) :: boolean
   def valid?(%__MODULE__{sender: sender, amount: amount, signature: signature} = tx) do
-    Ed25519.valid_signature?(signature, payload(tx), sender) and amount >= 0
+    is_reward?(tx) or (Ed25519.valid_signature?(signature, payload(tx), sender) and amount >= 0)
+  end
+
+  def reward(recipient) do
+    %__MODULE__{
+      timestamp: System.system_time(:nanoseconds),
+      sender: @rewarder,
+      recipient: recipient,
+      amount: @reward
+    }
+  end
+
+  def is_reward?(tx) do
+    tx.sender == @rewarder and tx.amount == @reward
+  end
+
+  @spec run(accounts :: %{binary() => float()}, [t()]) ::
+          {:ok, %{binary => float()}} | {:error, t()}
+  def run(accounts, []), do: {:ok, accounts}
+
+  def run(accounts, [tx | transactions]) do
+    cond do
+      is_reward?(tx) ->
+        accounts = Map.update(accounts, tx.recipient, tx.amount, &(&1 + tx.amount))
+        run(accounts, transactions)
+
+      not valid?(tx) ->
+        {:error, tx}
+
+      tx.amount <= Map.get(accounts, tx.sender, 0.0) ->
+        accounts = Map.update(accounts, tx.recipient, tx.amount, &(&1 + tx.amount))
+        accounts = Map.update(accounts, tx.sender, 0.0, &(&1 - tx.amount))
+        run(accounts, transactions)
+
+      true ->
+        {:error, tx}
+    end
   end
 
   @spec hash(tx :: t() | [t()]) :: binary()
@@ -107,10 +146,14 @@ defmodule Blockchain.Transaction do
 end
 
 defimpl String.Chars, for: Blockchain.Transaction do
-  def to_string(%{sender: snd, recipient: rcp, amount: amt, signature: sig}) do
-    snd = Base.url_encode64(snd, padding: false)
-    rcp = Base.url_encode64(rcp, padding: false)
-    sig = Base.url_encode64(sig, padding: false)
-    "#{snd} -#{amt}-> #{rcp} (sig: #{sig})"
+  def to_string(%{sender: snd, recipient: rcp, amount: amt, signature: sig, timestamp: ts} = tx) do
+    [snd, rcp, sig] = Enum.map([snd, rcp, sig], &Base.url_encode64(&1, padding: false))
+    date = DateTime.from_unix!(ts, :nanoseconds)
+
+    if Blockchain.Transaction.is_reward?(tx) do
+      "#{date}: REWARD -(#{amt})-> #{rcp}"
+    else
+      "#{date}: #{snd} -(#{amt})-> #{rcp} (sig: #{sig})"
+    end
   end
 end

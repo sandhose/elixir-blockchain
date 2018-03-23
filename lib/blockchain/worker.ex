@@ -8,21 +8,28 @@ defmodule Blockchain.Worker do
           pending: [%Transaction{}],
           head: Block.h(),
           timer: reference() | nil,
+          accounts: %{Ed25519.key() => float},
+          reward_to: Ed25519.key() | nil,
           task: pid() | nil
         }
 
   def start_link(_) do
-    GenServer.start_link(__MODULE__, :ok)
+    # TODO: worker name is temporary
+    GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
   end
 
+  def claim(pub), do: GenServer.cast(__MODULE__, {:claim, pub})
+  def start, do: GenServer.cast(__MODULE__, :start)
+
+  @spec init(:ok) :: {:ok, t()}
   def init(:ok) do
     Chain.init()
-    timer = Process.send_after(self(), :mine, 10 * 1000)
-    {:ok, %{pending: [], head: <<>>, timer: timer, task: nil}}
+    {:ok, %{pending: [], head: <<>>, accounts: %{}, timer: nil, reward_to: nil, task: nil}}
   end
 
-  def handle_info(:mine, %{pending: transactions, head: head} = state) do
-    block = %Block{transactions: transactions, parent: head}
+  def handle_info(:mine, %{pending: transactions, head: head, reward_to: reward_to} = state) do
+    reward = if reward_to, do: [Transaction.reward(reward_to)], else: []
+    block = %Block{transactions: transactions ++ reward, parent: head}
     worker = self()
 
     Logger.info("Start to mine #{block}")
@@ -36,38 +43,54 @@ defmodule Blockchain.Worker do
     {:noreply, %{state | timer: nil, task: pid}}
   end
 
+  def handle_cast(:start, state) do
+    timer = Process.send_after(self(), :mine, 0)
+    {:noreply, %{state | timer: timer}}
+  end
+
+  def handle_cast({:claim, pubkey}, state), do: {:noreply, %{state | reward_to: pubkey}}
+
   def handle_cast(
         {:mined, block},
-        %{pending: pending, head: head, timer: timer, task: task} = state
+        %{pending: pending, head: head, timer: timer, accounts: accounts, task: task} = state
       ) do
+    # TODO: timers are not always restarted
     state =
-      if Chain.valid?(block) do
-        Logger.info("New block mined: #{block}")
+      case Transaction.run(accounts, block.transactions) do
+        {:error, tx} ->
+          Logger.error("Transaction #{tx} is illegal, voiding block")
+          state
 
-        if task != nil and Process.alive?(task) do
-          Process.exit(task, :kill)
-        end
+        {:ok, accounts} ->
+          if Chain.valid?(block) do
+            Logger.info("New block mined: #{block}")
 
-        if timer != nil and Process.read_timer(timer) != false do
-          Process.cancel_timer(timer)
-        end
+            if task != nil and Process.alive?(task) do
+              Process.exit(task, :kill)
+            end
 
-        Chain.insert(block)
+            if timer != nil and Process.read_timer(timer) != false do
+              Process.cancel_timer(timer)
+            end
 
-        timer = Process.send_after(self(), :mine, 10 * 1000)
+            Chain.insert(block)
 
-        head = Block.hash(block)
+            timer = Process.send_after(self(), :mine, 10 * 1000)
 
-        pending =
-          Enum.filter(pending, fn t_pending ->
-            Enum.any?(block.transactions, fn t_block ->
-              Transaction.hash(t_block) == Transaction.hash(t_pending)
-            end)
-          end)
+            head = Block.hash(block)
 
-        %{state | pending: pending, head: head, timer: timer, task: nil}
-      else
-        state
+            pending =
+              Enum.filter(pending, fn t_pending ->
+                Enum.any?(block.transactions, fn t_block ->
+                  Transaction.hash(t_block) == Transaction.hash(t_pending)
+                end)
+              end)
+
+            %{state | pending: pending, accounts: accounts, head: head, timer: timer, task: nil}
+          else
+            Logger.error("Block invalid in chain")
+            state
+          end
       end
 
     {:noreply, state}

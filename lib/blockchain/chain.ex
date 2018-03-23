@@ -1,5 +1,6 @@
 defmodule Blockchain.Chain do
   alias Blockchain.Block
+  require Logger
 
   @table :blocks
 
@@ -23,9 +24,10 @@ defmodule Blockchain.Chain do
     :ets.new(@table, [:set, :protected, :named_table])
   end
 
+  def valid?(nil), do: false
+
   def valid?(block) do
     cond do
-      block == nil -> false
       not Block.valid?(block) -> false
       block.parent == <<>> -> true
       true -> valid?(lookup(block.parent))

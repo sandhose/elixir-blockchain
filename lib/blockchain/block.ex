@@ -6,6 +6,8 @@ defmodule Blockchain.Block do
   proofs (mine) for blocks.
   """
 
+  require Logger
+
   alias Blockchain.Transaction
 
   @type t :: %Blockchain.Block{
@@ -34,12 +36,20 @@ defmodule Blockchain.Block do
     |> :crypto.hash_final()
   end
 
+  def valid?(block) do
+    proof = valid_proof?(block)
+    if not proof, do: Logger.warn("invalid proof")
+    transactions = Enum.all?(block.transactions, &Transaction.valid?(&1))
+    if not transactions, do: Logger.warn("invalid transactions")
+    proof and transactions
+  end
+
   @doc """
   Check if a block has a valid proof inside
   """
-  @spec valid?(block :: t()) :: boolean
-  def valid?(block) do
-    challenge(hash(block), 16) and Enum.all?(block.transactions, &Transaction.valid?(&1))
+  @spec valid_proof?(block :: t()) :: boolean
+  def valid_proof?(block) do
+    challenge(hash(block), 16)
   end
 
   defp challenge(_hash, 0), do: true
@@ -50,7 +60,7 @@ defmodule Blockchain.Block do
   Find a valid proof for a given hash
   """
   def mine(block) do
-    if valid?(block) do
+    if valid_proof?(block) do
       block
     else
       mine(%__MODULE__{block | proof: block.proof + 1})
