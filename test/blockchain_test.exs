@@ -275,4 +275,26 @@ defmodule BlockchainTest do
       assert {:error, ^tx} = Transaction.rollback(accounts, MapSet.new([hash]), [tx])
     end
   end
+
+  describe "String.Chars for Transaction" do
+    test "Should have a deterministic output" do
+      assert "#{%Transaction{}}" == "#{%Transaction{}}"
+    end
+
+    test "Should recognise reward transactions" do
+      {priv, pub} = Ed25519.generate_key_pair()
+      refute String.contains?("#{Transaction.new(pub, 1, priv)}", "REWARD")
+      assert String.contains?("#{Transaction.reward(pub)}", "REWARD")
+    end
+  end
+
+  describe "String.Chars for Block" do
+    test "Should have a deterministic output" do
+      assert "#{%Block{proof: 0}}" == "#{%Block{proof: 0}}"
+      refute "#{%Block{proof: 0}}" == "#{%Block{proof: 5}}"
+
+      tx = %Transaction{}
+      assert String.contains?("#{%Block{transactions: [tx]}}", "#{tx}")
+    end
+  end
 end
