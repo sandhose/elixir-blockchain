@@ -199,4 +199,80 @@ defmodule BlockchainTest do
       refute Transaction.valid?(signed)
     end
   end
+
+  describe "Transaction.run?/3" do
+    test "Should save in account and hashes cache" do
+      {priv1, pub1} = Ed25519.generate_key_pair()
+      {_priv2, pub2} = Ed25519.generate_key_pair()
+      accounts = %{pub1 => 5.0}
+      txs = [Transaction.new(pub2, 2, priv1)]
+      {:ok, accounts, hashes} = Transaction.run(accounts, MapSet.new(), txs)
+      assert accounts == %{pub1 => 3.0, pub2 => 2.0}
+      assert hashes == MapSet.new(Enum.map(txs, &Transaction.hash(&1)))
+    end
+
+    test "Should allow reward transactions" do
+      {_priv, pub} = Ed25519.generate_key_pair()
+      tx = Transaction.reward(pub)
+      {:ok, accounts, hashes} = Transaction.run(%{}, MapSet.new(), [tx])
+      assert accounts == %{pub => tx.amount}
+      assert hashes == MapSet.new([Transaction.hash(tx)])
+    end
+
+    test "Should check the sender account can withdraw the tx amount" do
+      {priv1, pub1} = Ed25519.generate_key_pair()
+      {_priv2, pub2} = Ed25519.generate_key_pair()
+      accounts = %{pub1 => 5.0}
+      tx = Transaction.new(pub2, 7, priv1)
+      assert {:error, ^tx} = Transaction.run(accounts, MapSet.new(), [tx])
+    end
+
+    test "A transaction should not be dispensed twice" do
+      {priv1, pub1} = Ed25519.generate_key_pair()
+      {_priv2, pub2} = Ed25519.generate_key_pair()
+      accounts = %{pub1 => 5.0}
+      tx = Transaction.new(pub2, 7, priv1)
+      assert {:error, ^tx} = Transaction.run(accounts, MapSet.new(), [tx])
+    end
+  end
+
+  describe "Transaction.rollback?/3" do
+    test "Should save in account and hashes cache" do
+      {priv1, pub1} = Ed25519.generate_key_pair()
+      {_priv2, pub2} = Ed25519.generate_key_pair()
+      accounts = %{pub1 => 3.0, pub2 => 2.0}
+      tx = Transaction.new(pub2, 2, priv1)
+      hash = Transaction.hash(tx)
+      {:ok, accounts, hashes} = Transaction.rollback(accounts, MapSet.new([hash]), [tx])
+      assert accounts == %{pub1 => 5.0}
+      assert hashes == MapSet.new()
+    end
+
+    test "Should rollback reward transactions" do
+      {_priv, pub} = Ed25519.generate_key_pair()
+      tx = Transaction.reward(pub)
+      accounts = %{pub => tx.amount + 2.0}
+      hash = Transaction.hash(tx)
+      {:ok, accounts, hashes} = Transaction.rollback(accounts, MapSet.new([hash]), [tx])
+      assert accounts == %{pub => 2}
+      assert hashes == MapSet.new()
+    end
+
+    test "A transaction not yet applied should not be rolled back" do
+      {priv1, pub1} = Ed25519.generate_key_pair()
+      {_priv2, pub2} = Ed25519.generate_key_pair()
+      accounts = %{pub1 => 3.0, pub2 => 2.0}
+      tx = Transaction.new(pub2, 2, priv1)
+      assert {:error, ^tx} = Transaction.rollback(accounts, MapSet.new(), [tx])
+    end
+
+    test "Recipient account should have enough found" do
+      {priv1, pub1} = Ed25519.generate_key_pair()
+      {_priv2, pub2} = Ed25519.generate_key_pair()
+      accounts = %{pub1 => 3.0, pub2 => 2.0}
+      tx = Transaction.new(pub2, 3, priv1)
+      hash = Transaction.hash(tx)
+      assert {:error, ^tx} = Transaction.rollback(accounts, MapSet.new([hash]), [tx])
+    end
+  end
 end

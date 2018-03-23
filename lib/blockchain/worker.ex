@@ -4,11 +4,15 @@ defmodule Blockchain.Worker do
 
   alias Blockchain.{Block, Chain, Transaction}
 
+  @type accounts() :: %{Ed25519.key() => float}
+  @type tx_hashes() :: MapSet.t(binary())
+
   @type t() :: %{
           pending: [%Transaction{}],
           head: Block.h(),
           timer: reference() | nil,
-          accounts: %{Ed25519.key() => float},
+          accounts: accounts(),
+          tx_hashes: tx_hashes(),
           reward_to: Ed25519.key() | nil,
           task: pid() | nil
         }
@@ -24,7 +28,17 @@ defmodule Blockchain.Worker do
   @spec init(:ok) :: {:ok, t()}
   def init(:ok) do
     Chain.init()
-    {:ok, %{pending: [], head: <<>>, accounts: %{}, timer: nil, reward_to: nil, task: nil}}
+
+    {:ok,
+     %{
+       pending: [],
+       head: <<>>,
+       timer: nil,
+       accounts: %{},
+       tx_hashes: MapSet.new(),
+       reward_to: nil,
+       task: nil
+     }}
   end
 
   def handle_info(:mine, %{pending: transactions, head: head, reward_to: reward_to} = state) do
@@ -52,16 +66,23 @@ defmodule Blockchain.Worker do
 
   def handle_cast(
         {:mined, block},
-        %{pending: pending, head: head, timer: timer, accounts: accounts, task: task} = state
+        %{
+          pending: pending,
+          head: head,
+          timer: timer,
+          accounts: accounts,
+          tx_hashes: tx_hashes,
+          task: task
+        } = state
       ) do
     # TODO: timers are not always restarted
     state =
-      case Transaction.run(accounts, block.transactions) do
+      case Transaction.run(accounts, tx_hashes, block.transactions) do
         {:error, tx} ->
           Logger.error("Transaction #{tx} is illegal, voiding block")
           state
 
-        {:ok, accounts} ->
+        {:ok, accounts, tx_hashes} ->
           if Chain.valid?(block) do
             Logger.info("New block mined: #{block}")
 
@@ -86,7 +107,15 @@ defmodule Blockchain.Worker do
                 end)
               end)
 
-            %{state | pending: pending, accounts: accounts, head: head, timer: timer, task: nil}
+            %{
+              state
+              | pending: pending,
+                accounts: accounts,
+                tx_hashes: tx_hashes,
+                head: head,
+                timer: timer,
+                task: nil
+            }
           else
             Logger.error("Block invalid in chain")
             state

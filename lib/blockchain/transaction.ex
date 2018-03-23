@@ -103,23 +103,67 @@ defmodule Blockchain.Transaction do
     tx.sender == @rewarder and tx.amount == @reward
   end
 
-  @spec run(accounts :: %{binary() => float()}, [t()]) ::
-          {:ok, %{binary => float()}} | {:error, t()}
-  def run(accounts, []), do: {:ok, accounts}
+  defp prune_accounts(accounts) do
+    Map.drop(accounts, for({acc, amount} <- accounts, amount == 0.0, do: acc))
+  end
 
-  def run(accounts, [tx | transactions]) do
+  @spec run(
+          accounts :: %{binary() => float()},
+          hashes :: MapSet.t(binary()),
+          transactions :: [t()]
+        ) :: {:ok, %{binary() => float()}, MapSet.t(binary())} | {:error, t()}
+  def run(accounts, hashes, []), do: {:ok, prune_accounts(accounts), hashes}
+
+  def run(accounts, hashes, [tx | transactions]) do
+    hash = hash(tx)
+
     cond do
-      is_reward?(tx) ->
-        accounts = Map.update(accounts, tx.recipient, tx.amount, &(&1 + tx.amount))
-        run(accounts, transactions)
+      MapSet.member?(hashes, hash) ->
+        {:error, tx}
 
       not valid?(tx) ->
         {:error, tx}
 
+      is_reward?(tx) ->
+        accounts = Map.update(accounts, tx.recipient, tx.amount, &(&1 + tx.amount))
+        hashes = MapSet.put(hashes, hash)
+        run(accounts, hashes, transactions)
+
       tx.amount <= Map.get(accounts, tx.sender, 0.0) ->
         accounts = Map.update(accounts, tx.recipient, tx.amount, &(&1 + tx.amount))
         accounts = Map.update(accounts, tx.sender, 0.0, &(&1 - tx.amount))
-        run(accounts, transactions)
+        hashes = MapSet.put(hashes, hash)
+        run(accounts, hashes, transactions)
+
+      true ->
+        {:error, tx}
+    end
+  end
+
+  @spec rollback(
+          accounts :: %{binary() => float()},
+          hashes :: MapSet.t(binary()),
+          transactions :: [t()]
+        ) :: {:ok, %{binary() => float()}, MapSet.t(binary())} | {:error, t()}
+  def rollback(accounts, hashes, []), do: {:ok, prune_accounts(accounts), hashes}
+
+  def rollback(accounts, hashes, [tx | transactions]) do
+    hash = hash(tx)
+
+    cond do
+      not valid?(tx) ->
+        {:error, tx}
+
+      MapSet.member?(hashes, hash) and tx.amount <= Map.get(accounts, tx.recipient, 0.0) ->
+        accounts = Map.update(accounts, tx.recipient, tx.amount, &(&1 - tx.amount))
+
+        accounts =
+          if is_reward?(tx),
+            do: accounts,
+            else: Map.update(accounts, tx.sender, 0.0, &(&1 + tx.amount))
+
+        hashes = MapSet.delete(hashes, hash)
+        rollback(accounts, hashes, transactions)
 
       true ->
         {:error, tx}
