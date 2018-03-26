@@ -5,6 +5,7 @@ defmodule Blockchain.Application do
 
   def start(_type, _args) do
     children = [
+      Blockchain.Repo,
       Blockchain.Worker
     ]
 
