@@ -87,3 +87,16 @@ defimpl String.Chars, for: Blockchain.Block do
     Enum.join(message, "\n  ")
   end
 end
+
+defimpl Enumerable, for: Blockchain.Block do
+  def count(_list), do: {:error, __MODULE__}
+  def slice(_list), do: {:error, __MODULE__}
+  def member?(_list, _value), do: {:error, __MODULE__}
+
+  def reduce(_, {:halt, acc}, _fun), do: {:halted, acc}
+  def reduce(list, {:suspend, acc}, fun), do: {:suspended, acc, &reduce(list, &1, fun)}
+  def reduce(%Blockchain.Block{parent: <<>>}, {:cont, acc}, _fun), do: {:done, acc}
+
+  def reduce(block, {:cont, acc}, fun),
+    do: reduce(Blockchain.Chain.lookup(block.parent), fun.(block, acc), fun)
+end
