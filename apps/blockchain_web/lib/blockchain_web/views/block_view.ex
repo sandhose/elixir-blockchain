@@ -33,7 +33,7 @@ defmodule BlockchainWeb.BlockView do
           "transaction.json",
           as: :transaction
         ),
-      proof: block.proof,
+      nonce: block.nonce,
       parent: Base.url_encode64(block.parent, padding: false)
     }
   end

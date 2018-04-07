@@ -29,21 +29,21 @@ defmodule BlockchainTest do
     test "Altering anything to a block should make it invalid" do
       block = Block.mine(%Block{parent: <<1, 2, 3>>})
       assert Block.valid?(block)
-      refute Block.valid?(%Block{block | proof: block.proof + 1})
+      refute Block.valid?(%Block{block | nonce: block.nonce + 1})
       refute Block.valid?(%Block{block | parent: <<3, 2, 1>>})
     end
   end
 
   describe "Block.hash/1" do
     test "Two identical blocks should have the same hash" do
-      a = %Block{proof: 42}
-      b = %Block{proof: 42}
+      a = %Block{nonce: 42}
+      b = %Block{nonce: 42}
       assert Block.hash(a) == Block.hash(b)
     end
 
     test "Two distinct blocks should have different hashes" do
-      a = %Block{proof: 1}
-      b = %Block{proof: 2}
+      a = %Block{nonce: 1}
+      b = %Block{nonce: 2}
       refute Block.hash(a) == Block.hash(b)
     end
   end
@@ -290,8 +290,8 @@ defmodule BlockchainTest do
 
   describe "String.Chars for Block" do
     test "Should have a deterministic output" do
-      assert "#{%Block{proof: 0}}" == "#{%Block{proof: 0}}"
-      refute "#{%Block{proof: 0}}" == "#{%Block{proof: 5}}"
+      assert "#{%Block{nonce: 0}}" == "#{%Block{nonce: 0}}"
+      refute "#{%Block{nonce: 0}}" == "#{%Block{nonce: 5}}"
 
       tx = %Transaction{}
       assert String.contains?("#{%Block{transactions: [tx]}}", "#{tx}")

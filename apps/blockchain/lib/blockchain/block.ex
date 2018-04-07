@@ -12,17 +12,17 @@ defmodule Blockchain.Block do
 
   @type t :: %Blockchain.Block{
           transactions: [Blockchain.Transaction.t()],
-          proof: p(),
+          nonce: p(),
           parent: h()
         }
 
   @typedoc "A block hash (SHA256)"
   @type h :: binary()
 
-  @typedoc "Block proof"
+  @typedoc "Block nonce field"
   @type p :: integer
 
-  defstruct transactions: [], proof: 0, parent: ""
+  defstruct transactions: [], nonce: 0, parent: ""
 
   @doc """
   Compute the hash of a block
@@ -31,7 +31,7 @@ defmodule Blockchain.Block do
   def hash(block) do
     :crypto.hash_init(:sha256)
     |> Transaction.hash(block.transactions)
-    |> :crypto.hash_update(<<block.proof::little-unsigned-32>>)
+    |> :crypto.hash_update(<<block.nonce::little-unsigned-32>>)
     |> :crypto.hash_update(block.parent)
     |> :crypto.hash_final()
   end
@@ -63,21 +63,21 @@ defmodule Blockchain.Block do
     if valid_proof?(block) do
       block
     else
-      mine(%__MODULE__{block | proof: block.proof + 1})
+      mine(%__MODULE__{block | nonce: block.nonce + 1})
     end
   end
 end
 
 defimpl String.Chars, for: Blockchain.Block do
-  def to_string(%{transactions: txs, proof: proof, parent: parent} = block) do
+  def to_string(%{transactions: txs, nonce: nonce, parent: parent} = block) do
     parent = Base.url_encode64(parent, padding: false)
 
     message =
-      if proof == 0 do
+      if nonce == 0 do
         ["Block"]
       else
         hash = Blockchain.Block.hash(block) |> Base.url_encode64(padding: false)
-        ["Block #{hash}", "Proof: #{proof}"]
+        ["Block #{hash}", "Nonce: #{nonce}"]
       end ++
         ["Parent: #{parent}"] ++
         if Enum.empty?(txs),
