@@ -4,6 +4,8 @@ defmodule Blockchain.Chain do
 
   @table :blocks
 
+  def lookup(<<>>), do: nil
+
   def lookup(hash) do
     case :ets.lookup(@table, hash) do
       [{_hash, block}] -> block

@@ -88,6 +88,7 @@ defimpl String.Chars, for: Blockchain.Block do
   end
 end
 
+# TODO: This implementation relies on Chain, which has to be initialized
 defimpl Enumerable, for: Blockchain.Block do
   def count(_list), do: {:error, __MODULE__}
   def slice(_list), do: {:error, __MODULE__}

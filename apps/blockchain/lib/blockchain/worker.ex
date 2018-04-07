@@ -24,6 +24,7 @@ defmodule Blockchain.Worker do
 
   def claim(pub), do: GenServer.cast(__MODULE__, {:claim, pub})
   def start, do: GenServer.cast(__MODULE__, :start)
+  def head, do: GenServer.call(__MODULE__, :head)
 
   @spec init(:ok) :: {:ok, t()}
   def init(:ok) do
@@ -56,6 +57,8 @@ defmodule Blockchain.Worker do
 
     {:noreply, %{state | timer: nil, task: pid}}
   end
+
+  def handle_call(:head, _from, %{head: head} = state), do: {:reply, head, state}
 
   def handle_cast(:start, state) do
     timer = Process.send_after(self(), :mine, 0)

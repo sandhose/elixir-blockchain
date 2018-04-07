@@ -20,6 +20,13 @@ defmodule BlockchainWeb.Router do
     get("/", PageController, :index)
   end
 
+  scope "/blocks", BlockchainWeb do
+    pipe_through(:api)
+    get("/", BlockController, :index)
+    get("/:hash", BlockController, :show)
+    get("/:hash/transactions", BlockController, :transactions)
+  end
+
   # Other scopes may use custom stacks.
   # scope "/api", BlockchainWeb do
   #   pipe_through :api
