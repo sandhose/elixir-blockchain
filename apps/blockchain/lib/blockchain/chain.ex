@@ -30,9 +30,20 @@ defmodule Blockchain.Chain do
 
   def valid?(block) do
     cond do
-      not Block.valid?(block) -> false
-      block.parent == <<>> -> true
-      true -> valid?(lookup(block.parent))
+      not Block.valid?(block) ->
+        false
+
+      block.parent == <<>> ->
+        block.index == 0
+
+      true ->
+        parent = lookup(block.parent)
+
+        unless parent == nil do
+          parent.index + 1 == block.index && valid?(parent)
+        else
+          false
+        end
     end
   end
 end

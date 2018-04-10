@@ -11,6 +11,7 @@ defmodule Blockchain.Block do
   alias Blockchain.Transaction
 
   @type t :: %Blockchain.Block{
+          index: integer,
           transactions: [Blockchain.Transaction.t()],
           nonce: p(),
           parent: h()
@@ -22,7 +23,7 @@ defmodule Blockchain.Block do
   @typedoc "Block nonce field"
   @type p :: integer
 
-  defstruct transactions: [], nonce: 0, parent: ""
+  defstruct index: 0, transactions: [], nonce: 0, parent: ""
 
   @doc """
   Compute the hash of a block
@@ -30,6 +31,7 @@ defmodule Blockchain.Block do
   @spec hash(block :: t()) :: h()
   def hash(block) do
     :crypto.hash_init(:sha256)
+    |> :crypto.hash_update(<<block.index::little-unsigned-32>>)
     |> Transaction.hash(block.transactions)
     |> :crypto.hash_update(<<block.nonce::little-unsigned-32>>)
     |> :crypto.hash_update(block.parent)
@@ -69,15 +71,15 @@ defmodule Blockchain.Block do
 end
 
 defimpl String.Chars, for: Blockchain.Block do
-  def to_string(%{transactions: txs, nonce: nonce, parent: parent} = block) do
+  def to_string(%{index: index, transactions: txs, nonce: nonce, parent: parent} = block) do
     parent = Base.url_encode64(parent, padding: false)
 
     message =
       if nonce == 0 do
-        ["Block"]
+        ["Block ##{index}"]
       else
         hash = Blockchain.Block.hash(block) |> Base.url_encode64(padding: false)
-        ["Block #{hash}", "Nonce: #{nonce}"]
+        ["Block ##{index} #{hash}", "Nonce: #{nonce}"]
       end ++
         ["Parent: #{parent}"] ++
         if Enum.empty?(txs),
@@ -96,7 +98,7 @@ defimpl Enumerable, for: Blockchain.Block do
 
   def reduce(_, {:halt, acc}, _fun), do: {:halted, acc}
   def reduce(list, {:suspend, acc}, fun), do: {:suspended, acc, &reduce(list, &1, fun)}
-  def reduce(%Blockchain.Block{parent: <<>>}, {:cont, acc}, _fun), do: {:done, acc}
+  def reduce(nil, {:cont, acc}, _fun), do: {:done, acc}
 
   def reduce(block, {:cont, acc}, fun),
     do: reduce(Blockchain.Chain.lookup(block.parent), fun.(block, acc), fun)

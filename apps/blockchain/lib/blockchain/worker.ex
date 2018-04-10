@@ -42,9 +42,12 @@ defmodule Blockchain.Worker do
      }}
   end
 
+  defp next_index(<<>>), do: 0
+  defp next_index(hash), do: Chain.lookup(hash).index + 1
+
   def handle_info(:mine, %{pending: transactions, head: head, reward_to: reward_to} = state) do
     reward = if reward_to, do: [Transaction.reward(reward_to)], else: []
-    block = %Block{transactions: transactions ++ reward, parent: head}
+    block = %Block{index: next_index(head), transactions: transactions ++ reward, parent: head}
     worker = self()
 
     Logger.info("Start to mine #{block}")

@@ -14,7 +14,11 @@ defmodule BlockchainWeb.BlockController do
   end
 
   def index(conn, params) do
-    head = Map.get_lazy(params, :head, fn -> Worker.head() end)
+    head =
+      Map.get_lazy(params, :head, fn ->
+        Worker.head() |> Base.url_encode64(padding: false)
+      end)
+
     limit = Map.get(params, :first, 5) - 1
 
     blocks =
