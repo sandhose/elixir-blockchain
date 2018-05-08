@@ -16,8 +16,6 @@ defmodule BlockchainWeb.Router do
   scope "/", BlockchainWeb do
     # Use the default browser stack
     pipe_through(:browser)
-
-    get("/", PageController, :index)
   end
 
   scope "/blocks", BlockchainWeb do

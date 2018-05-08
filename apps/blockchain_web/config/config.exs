@@ -6,9 +6,7 @@
 use Mix.Config
 
 # General application configuration
-config :blockchain_web,
-  namespace: BlockchainWeb,
-  ecto_repos: [Blockchain.Repo]
+config :blockchain_web, namespace: BlockchainWeb
 
 # Configures the endpoint
 config :blockchain_web, BlockchainWeb.Endpoint,
