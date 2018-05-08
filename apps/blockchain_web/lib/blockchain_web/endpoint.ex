@@ -1,8 +1,6 @@
 defmodule BlockchainWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :blockchain_web
 
-  socket("/socket", BlockchainWeb.UserSocket)
-
   # Serve at "/" the static files from "priv/static" directory.
   #
   # You should set gzip to true if you are running phoenix.digest
@@ -34,16 +32,6 @@ defmodule BlockchainWeb.Endpoint do
 
   plug(Plug.MethodOverride)
   plug(Plug.Head)
-
-  # The session will be stored in the cookie and signed,
-  # this means its contents can be read but not tampered with.
-  # Set :encryption_salt if you would also like to encrypt it.
-  plug(
-    Plug.Session,
-    store: :cookie,
-    key: "_blockchain_web_key",
-    signing_salt: "OfDFPO07"
-  )
 
   plug(BlockchainWeb.Router)
 
