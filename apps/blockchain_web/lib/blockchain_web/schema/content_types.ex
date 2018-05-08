@@ -1,5 +1,6 @@
 defmodule BlockchainWeb.Schema.ContentTypes do
   use Absinthe.Schema.Notation
+  use Absinthe.Relay.Schema.Notation, :modern
 
   scalar :hash, name: "Hash" do
     serialize(&Base.url_encode64(&1, padding: false))
@@ -20,7 +21,10 @@ defmodule BlockchainWeb.Schema.ContentTypes do
     :error
   end
 
-  object :transaction do
+  defp tx_id(%Blockchain.Transaction{} = tx, _), do: Blockchain.Transaction.hash(tx)
+  defp tx_id(_, _), do: nil
+
+  node object(:transaction, id_fetcher: &tx_id/2) do
     field(:timestamp, :integer)
     field(:sender, :hash)
     field(:recipient, :hash)
@@ -28,10 +32,26 @@ defmodule BlockchainWeb.Schema.ContentTypes do
     field(:signature, :hash)
   end
 
-  object :block do
+  connection(node_type: :transaction)
+
+  defp block_id(%Blockchain.Block{} = block, _), do: Blockchain.Block.hash(block)
+  defp block_id(_, _), do: nil
+
+  node object(:block, id_fetcher: &block_id/2) do
     field(:index, :integer)
-    field(:transactions, list_of(:transaction))
+
+    connection field(:transactions, node_type: :transaction) do
+      resolve(fn pagination_args, %{source: block} ->
+        Absinthe.Relay.Connection.from_list(
+          block.transactions,
+          pagination_args
+        )
+      end)
+    end
+
     field(:nonce, :integer)
     field(:parent, :hash)
   end
+
+  connection(node_type: :block)
 end
