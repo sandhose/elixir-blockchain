@@ -13,6 +13,7 @@ defmodule Blockchain.Block do
   @type t :: %Blockchain.Block{
           index: integer,
           transactions: [Blockchain.Transaction.t()],
+          tx_hash: h() | nil,
           nonce: p(),
           parent: h()
         }
@@ -23,27 +24,41 @@ defmodule Blockchain.Block do
   @typedoc "Block nonce field"
   @type p :: integer
 
-  defstruct index: 0, transactions: [], nonce: 0, parent: ""
+  defstruct index: 0, transactions: [], nonce: 0, parent: "", tx_hash: nil
 
   @doc """
   Compute the hash of a block
   """
   @spec hash(block :: t()) :: h()
+  def hash(%__MODULE__{tx_hash: nil} = block), do: hash(optimize(block))
+
   def hash(block) do
     :crypto.hash_init(:sha256)
     |> :crypto.hash_update(<<block.index::little-unsigned-32>>)
-    |> Transaction.hash(block.transactions)
+    |> :crypto.hash_update(block.tx_hash)
     |> :crypto.hash_update(<<block.nonce::little-unsigned-32>>)
     |> :crypto.hash_update(block.parent)
     |> :crypto.hash_final()
   end
 
+  @doc """
+  Optimize a block by saving the transaction hash inside it
+  """
+  def optimize(block) do
+    %__MODULE__{block | tx_hash: Transaction.hash(block.transactions)}
+  end
+
   def valid?(block) do
     proof = valid_proof?(block)
     if not proof, do: Logger.warn("invalid proof")
+
+    optimized = block.tx_hash == nil or block == optimize(block)
+    if not optimized, do: Logger.warn("tx optimization was wrong")
+
     transactions = Enum.all?(block.transactions, &Transaction.valid?(&1))
     if not transactions, do: Logger.warn("invalid transactions")
-    proof and transactions
+
+    proof and transactions and optimized
   end
 
   @doc """

@@ -56,7 +56,7 @@ defmodule Blockchain.Worker do
 
     {:ok, pid} =
       Task.start(fn ->
-        mined = Block.mine(block)
+        mined = Block.optimize(block) |> Block.mine()
         GenServer.cast(worker, {:mined, mined})
       end)
 
