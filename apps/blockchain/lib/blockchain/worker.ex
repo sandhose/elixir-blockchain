@@ -50,7 +50,9 @@ defmodule Blockchain.Worker do
     block = %Block{index: next_index(head), transactions: transactions ++ reward, parent: head}
     worker = self()
 
-    Logger.info("Start to mine #{block}")
+    Logger.info(
+      "Start to mine block ##{block.index} (#{length(block.transactions)} transactions)"
+    )
 
     {:ok, pid} =
       Task.start(fn ->
@@ -61,7 +63,28 @@ defmodule Blockchain.Worker do
     {:noreply, %{state | timer: nil, task: pid}}
   end
 
+  def handle_call({:balance, account}, _from, %{accounts: accounts} = state) do
+    {:reply, Map.get(accounts, account, 0), state}
+  end
+
   def handle_call(:head, _from, %{head: head} = state), do: {:reply, head, state}
+
+  def handle_cast(
+        {:queue, tx},
+        %{pending: pending, accounts: accounts, tx_hashes: tx_hashes} = state
+      ) do
+    pending = pending ++ [tx]
+
+    # Try to apply pending transactions
+    # TODO: log errors
+    case Transaction.run(accounts, tx_hashes, pending) do
+      {:error, _} ->
+        {:noreply, state}
+
+      {:ok, _, _} ->
+        {:noreply, %{state | pending: pending}}
+    end
+  end
 
   def handle_cast(:start, state) do
     timer = Process.send_after(self(), :mine, 0)
@@ -106,8 +129,9 @@ defmodule Blockchain.Worker do
 
             head = Block.hash(block)
 
+            # FIXME: something's wrong here.
             pending =
-              Enum.filter(pending, fn t_pending ->
+              Enum.reject(pending, fn t_pending ->
                 Enum.any?(block.transactions, fn t_block ->
                   Transaction.hash(t_block) == Transaction.hash(t_pending)
                 end)
