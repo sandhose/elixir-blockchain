@@ -45,7 +45,9 @@ defmodule BlockchainWeb.Mixfile do
       {:phoenix_live_reload, "~> 1.0", only: :dev},
       {:gettext, "~> 0.11"},
       {:blockchain, in_umbrella: true},
-      {:cowboy, "~> 1.0"}
+      {:cowboy, "~> 1.0"},
+      {:absinthe, "~> 1.4"},
+      {:absinthe_plug, "~> 1.4.0"}
     ]
   end
 

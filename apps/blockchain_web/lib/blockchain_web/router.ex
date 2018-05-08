@@ -27,6 +27,13 @@ defmodule BlockchainWeb.Router do
     get("/:hash/transactions", BlockController, :transactions)
   end
 
+  forward(
+    "/graphiql",
+    Absinthe.Plug.GraphiQL,
+    schema: BlockchainWeb.Schema,
+    interface: :simple
+  )
+
   # Other scopes may use custom stacks.
   # scope "/api", BlockchainWeb do
   #   pipe_through :api
