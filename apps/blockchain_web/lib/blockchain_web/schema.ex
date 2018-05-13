@@ -4,12 +4,13 @@ defmodule BlockchainWeb.Schema do
 
   import_types(BlockchainWeb.Schema.ContentTypes)
 
+  alias Blockchain.{Chain, Block, Transaction}
   alias BlockchainWeb.Resolvers
 
   node interface do
     resolve_type(fn
-      %Blockchain.Block{}, _ -> :block
-      %Blockchain.Transaction{}, _ -> :transaction
+      %Block{}, _ -> :block
+      %Transaction{}, _ -> :transaction
       _, _ -> nil
     end)
   end
@@ -18,13 +19,13 @@ defmodule BlockchainWeb.Schema do
     node field do
       resolve(fn
         %{type: :block, id: id}, _ ->
-          case Blockchain.Chain.lookup(id) do
+          case Chain.lookup(BlockchainWeb.Application.chain(), id) do
             nil -> :error
             block -> {:ok, block}
           end
 
         %{type: :transaction, id: id}, _ ->
-          case Blockchain.Chain.find_tx(id) do
+          case Chain.find_tx(BlockchainWeb.Application.chain(), id) do
             nil -> :error
             {tx, _} -> {:ok, tx}
           end

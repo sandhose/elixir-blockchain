@@ -1,8 +1,23 @@
 defmodule BlockchainWeb.Application do
   use Application
 
+  alias Blockchain.Worker
+
+  @worker_name WebWorker
+
+  @doc """
+  Get the application-wide worker's head
+  """
+  def head, do: Worker.head(@worker_name)
+
+  @doc """
+  Get the application-wide worker's chain
+  """
+  def chain, do: Worker.chain(@worker_name)
+
   def start(_type, _args) do
     children = [
+      {Worker, name: @worker_name},
       BlockchainWeb.Endpoint
     ]
 

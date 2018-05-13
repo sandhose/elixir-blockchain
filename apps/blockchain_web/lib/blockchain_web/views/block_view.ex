@@ -2,6 +2,14 @@ defmodule BlockchainWeb.BlockView do
   require Logger
   use BlockchainWeb, :view
 
+  defp encode_or_nil(binary) do
+    len = byte_size(binary) * 8
+
+    if binary == <<0::size(len)>>,
+      do: nil,
+      else: Base.url_encode64(binary, padding: false)
+  end
+
   def render("index.json", %{blocks: blocks}) do
     %{data: render_many(blocks, BlockchainWeb.BlockView, "block.json")}
   end
@@ -13,14 +21,6 @@ defmodule BlockchainWeb.BlockView do
       "transaction.json",
       as: :transaction
     )
-  end
-
-  defp encode_or_nil(binary) do
-    len = byte_size(binary) * 8
-
-    if binary == <<0::size(len)>>,
-      do: nil,
-      else: Base.url_encode64(binary, padding: false)
   end
 
   def render("transaction.json", %{

@@ -5,7 +5,7 @@ defmodule Blockchain.Application do
   alias Blockchain.{Worker, Bot}
 
   def start(_type, _args) do
-    {:ok, worker} = Worker.start_link(:ok)
+    {:ok, worker} = Worker.start_link()
 
     bots =
       for _ <- 1..10 do

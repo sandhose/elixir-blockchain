@@ -8,9 +8,9 @@ defmodule Blockchain.Block do
 
   require Logger
 
-  alias Blockchain.Transaction
+  alias Blockchain.{Transaction, Chain}
 
-  @type t :: %Blockchain.Block{
+  @type t() :: %Blockchain.Block{
           index: integer,
           transactions: [Blockchain.Transaction.t()],
           tx_hash: h() | nil,
@@ -83,6 +83,45 @@ defmodule Blockchain.Block do
       mine(%__MODULE__{block | nonce: block.nonce + 1})
     end
   end
+
+  defmodule Enum do
+    @moduledoc """
+    Simple wrapper module to iterate through a Chain
+    """
+
+    alias Blockchain.Block
+
+    @enforce_keys [:head, :chain]
+    defstruct [:head, :chain]
+
+    @opaque t() :: %__MODULE__{head: Block.t(), chain: Chain.t()}
+
+    @spec new(head :: Block.h() | Block.t(), chain :: Chain.t()) :: Blockchain.Block.Enum.t()
+    def new(head, chain) when is_binary(head),
+      do: new(Chain.lookup(chain, head), chain)
+
+    def new(%Block{} = head, %Chain{} = chain),
+      do: %__MODULE__{head: head, chain: chain}
+
+    def next(%__MODULE__{chain: nil}), do: nil
+    def next(%__MODULE__{head: nil}), do: nil
+
+    def next(%__MODULE__{head: head, chain: chain} = enum),
+      do: %__MODULE__{enum | head: Chain.lookup(chain, head.parent)}
+  end
+
+  defimpl Enumerable, for: Block.Enum do
+    def count(_list), do: {:error, __MODULE__}
+    def slice(_list), do: {:error, __MODULE__}
+    def member?(_list, _value), do: {:error, __MODULE__}
+
+    def reduce(_, {:halt, acc}, _fun), do: {:halted, acc}
+    def reduce(list, {:suspend, acc}, fun), do: {:suspended, acc, &reduce(list, &1, fun)}
+    def reduce(%Blockchain.Block.Enum{head: nil}, {:cont, acc}, _fun), do: {:done, acc}
+
+    def reduce(enum, {:cont, acc}, fun),
+      do: reduce(Enum.next(enum), fun.(enum.head, acc), fun)
+  end
 end
 
 defimpl String.Chars, for: Blockchain.Block do
@@ -103,18 +142,4 @@ defimpl String.Chars, for: Blockchain.Block do
 
     Enum.join(message, "\n  ")
   end
-end
-
-# TODO: This implementation relies on Chain, which has to be initialized
-defimpl Enumerable, for: Blockchain.Block do
-  def count(_list), do: {:error, __MODULE__}
-  def slice(_list), do: {:error, __MODULE__}
-  def member?(_list, _value), do: {:error, __MODULE__}
-
-  def reduce(_, {:halt, acc}, _fun), do: {:halted, acc}
-  def reduce(list, {:suspend, acc}, fun), do: {:suspended, acc, &reduce(list, &1, fun)}
-  def reduce(nil, {:cont, acc}, _fun), do: {:done, acc}
-
-  def reduce(block, {:cont, acc}, fun),
-    do: reduce(Blockchain.Chain.lookup(block.parent), fun.(block, acc), fun)
 end

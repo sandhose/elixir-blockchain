@@ -8,7 +8,9 @@ defmodule BlockchainWeb.Resolvers.Blocks do
     # Fetch the cursor and the limit frop arguments
     # If no `after` was set, use the chain's head
     cursor =
-      Map.get_lazy(args, :after, fn -> Worker.head() |> Base.url_encode64(padding: false) end)
+      Map.get_lazy(args, :after, fn ->
+        BlockchainWeb.Application.head() |> Base.url_encode64(padding: false)
+      end)
       |> Base.url_decode64(padding: false)
 
     limit = Map.get(args, :first, 10)
@@ -20,7 +22,7 @@ defmodule BlockchainWeb.Resolvers.Blocks do
 
       {:ok, cursor} ->
         # Lookup for the head block
-        block = Chain.lookup(cursor)
+        block = Chain.lookup(BlockchainWeb.Application.chain(), cursor)
 
         if block == nil do
           {:error, message: "Block not found"}

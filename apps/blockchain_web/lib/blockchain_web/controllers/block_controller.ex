@@ -2,13 +2,13 @@ defmodule BlockchainWeb.BlockController do
   require Logger
   use BlockchainWeb, :controller
 
-  alias Blockchain.{Worker, Chain}
+  alias Blockchain.Chain
 
   def block_from_param(nil), do: nil
 
   def block_from_param(hash) do
     case Base.url_decode64(hash, padding: false) do
-      {:ok, hash} -> Chain.lookup(hash)
+      {:ok, hash} -> Chain.lookup(BlockchainWeb.Application.chain(), hash)
       :error -> nil
     end
   end
@@ -16,7 +16,7 @@ defmodule BlockchainWeb.BlockController do
   def index(conn, params) do
     head =
       Map.get_lazy(params, :head, fn ->
-        Worker.head() |> Base.url_encode64(padding: false)
+        BlockchainWeb.Application.head() |> Base.url_encode64(padding: false)
       end)
 
     limit = Map.get(params, :first, 5) - 1

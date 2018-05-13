@@ -21,7 +21,7 @@ defmodule Blockchain.Bot do
   end
 
   def init([worker: nil] = opts) do
-    {:ok, worker} = Blockchain.Worker.start_link(:ok)
+    {:ok, worker} = Blockchain.Worker.start_link()
     Process.link(worker)
     init(Keyword.put(opts, :worker, worker))
   end

@@ -8,6 +8,7 @@ defmodule Blockchain.Worker do
   @type tx_hashes() :: MapSet.t(binary())
 
   @type t() :: %{
+          chain: Chain.t(),
           pending: [%Transaction{}],
           head: Block.h(),
           timer: reference() | nil,
@@ -17,21 +18,19 @@ defmodule Blockchain.Worker do
           task: pid() | nil
         }
 
-  def start_link(_) do
+  def start_link(opts \\ []) do
     # TODO: worker name is temporary
-    GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
+    GenServer.start_link(__MODULE__, :ok, opts)
   end
 
-  def claim(pub), do: GenServer.cast(__MODULE__, {:claim, pub})
-  def start, do: GenServer.cast(__MODULE__, :start)
-  def head, do: GenServer.call(__MODULE__, :head)
+  def head(wrk), do: GenServer.call(wrk, :head)
+  def chain(wrk), do: GenServer.call(wrk, :chain)
 
   @spec init(:ok) :: {:ok, t()}
   def init(:ok) do
-    Chain.init()
-
     {:ok,
      %{
+       chain: Chain.new(),
        pending: [],
        head: <<>>,
        timer: nil,
@@ -42,12 +41,21 @@ defmodule Blockchain.Worker do
      }}
   end
 
-  defp next_index(<<>>), do: 0
-  defp next_index(hash), do: Chain.lookup(hash).index + 1
+  defp next_index(_chain, <<>>), do: 0
+  defp next_index(chain, hash), do: Chain.lookup(chain, hash).index + 1
 
-  def handle_info(:mine, %{pending: transactions, head: head, reward_to: reward_to} = state) do
+  def handle_info(
+        :mine,
+        %{pending: transactions, head: head, reward_to: reward_to, chain: chain} = state
+      ) do
     reward = if reward_to, do: [Transaction.reward(reward_to)], else: []
-    block = %Block{index: next_index(head), transactions: transactions ++ reward, parent: head}
+
+    block = %Block{
+      index: next_index(chain, head),
+      transactions: transactions ++ reward,
+      parent: head
+    }
+
     worker = self()
 
     Logger.info(
@@ -68,6 +76,8 @@ defmodule Blockchain.Worker do
   end
 
   def handle_call(:head, _from, %{head: head} = state), do: {:reply, head, state}
+
+  def handle_call(:chain, _from, %{chain: chain} = state), do: {:reply, chain, state}
 
   def handle_cast(
         {:queue, tx},
@@ -96,6 +106,7 @@ defmodule Blockchain.Worker do
   def handle_cast(
         {:mined, block},
         %{
+          chain: chain,
           pending: pending,
           head: head,
           timer: timer,
@@ -112,7 +123,7 @@ defmodule Blockchain.Worker do
           state
 
         {:ok, accounts, tx_hashes} ->
-          if Chain.valid?(block) do
+          if Chain.valid?(chain, block) do
             Logger.info("New block mined: #{block}")
 
             if task != nil and Process.alive?(task) do
@@ -123,7 +134,7 @@ defmodule Blockchain.Worker do
               Process.cancel_timer(timer)
             end
 
-            Chain.insert(block)
+            Chain.insert(chain, block)
 
             timer = Process.send_after(self(), :mine, 10 * 1000)
 
