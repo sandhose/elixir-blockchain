@@ -6,9 +6,6 @@ defmodule Blockchain.Chain do
 
   defstruct [:blocks, :transactions]
 
-  @blocks :blocks
-  @transactions :transactions
-
   @spec lookup(chain :: t(), hash :: Block.h()) :: Block.t() | nil
   def lookup(_chain, <<>>), do: nil
 
@@ -48,7 +45,7 @@ defmodule Blockchain.Chain do
     }
   end
 
-  @spec valid?(chain :: t(), block :: Block.t() | nil) :: bool
+  @spec valid?(chain :: t(), block :: Block.t() | nil) :: boolean
   def valid?(_chain, nil), do: false
 
   def valid?(chain, block) do

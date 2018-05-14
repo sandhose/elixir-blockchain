@@ -46,6 +46,69 @@ defmodule Blockchain.Worker do
   defp next_index(_chain, <<>>), do: 0
   defp next_index(chain, hash), do: Chain.lookup(chain, hash).index + 1
 
+  @doc """
+  Get the difference between two blocks in a chain
+  """
+  def diff(from, to, _chain) when from == to do
+    {[], []}
+  end
+
+  def diff(nil, %Block{parent: parent} = to, chain) do
+    {added, removed} = diff(nil, Chain.lookup(chain, parent), chain)
+    {added ++ [to], removed}
+  end
+
+  def diff(%Block{index: i, parent: parent} = from, %Block{index: j} = to, chain) when i > j do
+    {added, removed} = diff(Chain.lookup(chain, parent), to, chain)
+    {added, removed ++ [from]}
+  end
+
+  def diff(%Block{index: i} = from, %Block{index: j, parent: parent} = to, chain) when i < j do
+    {added, removed} = diff(from, Chain.lookup(chain, parent), chain)
+    {added ++ [to], removed}
+  end
+
+  def diff(%Block{parent: pf} = from, %Block{parent: pt} = to, chain) do
+    {added, removed} = diff(Chain.lookup(chain, pf), Chain.lookup(chain, pt), chain)
+    {added ++ [to], removed ++ [from]}
+  end
+
+  @doc """
+  Fetch the missing blocks from other peers
+  """
+  def fetch_missing(nil, _peers, _chain), do: :ok
+  def fetch_missing(<<>>, _peers, _chain), do: :ok
+
+  def fetch_missing(hash, peers, chain) do
+    if Chain.lookup(chain, hash) == nil do
+      Logger.info("Asking peers for #{Base.url_encode64(hash, padding: false)}")
+
+      block =
+        for peer <- peers do
+          GenServer.call(peer, {:fetch, hash})
+        end
+        |> Enum.find(fn
+          %Block{} -> true
+          _ -> false
+        end)
+
+      unless block == nil do
+        Chain.insert(chain, block)
+        fetch_missing(block.parent, peers, chain)
+
+        for peer <- peers do
+          GenServer.cast(peer, {:insert_block, block})
+        end
+
+        :ok
+      else
+        :err
+      end
+    else
+      :ok
+    end
+  end
+
   def handle_info(
         :mine,
         %{pending: transactions, head: head, reward_to: reward_to, chain: chain} = state
@@ -67,7 +130,7 @@ defmodule Blockchain.Worker do
     {:ok, pid} =
       Task.start(fn ->
         mined = Block.optimize(block) |> Block.mine()
-        GenServer.cast(worker, {:mined, mined})
+        GenServer.cast(worker, {:insert_block, mined})
       end)
 
     {:noreply, %{state | timer: nil, task: pid}}
@@ -117,61 +180,6 @@ defmodule Blockchain.Worker do
 
   def handle_cast({:claim, pubkey}, state), do: {:noreply, %{state | reward_to: pubkey}}
 
-  def diff(from, to, _chain) when from == to do
-    {[], []}
-  end
-
-  def diff(nil, %Block{parent: parent} = to, chain) do
-    {added, removed} = diff(nil, Chain.lookup(chain, parent), chain)
-    {added ++ [to], removed}
-  end
-
-  def diff(%Block{index: i, parent: parent} = from, %Block{index: j} = to, chain) when i > j do
-    {added, removed} = diff(Chain.lookup(chain, parent), to, chain)
-    {added, removed ++ [from]}
-  end
-
-  def diff(%Block{index: i} = from, %Block{index: j, parent: parent} = to, chain) when i < j do
-    {added, removed} = diff(from, Chain.lookup(chain, parent), chain)
-    {added ++ [to], removed}
-  end
-
-  def diff(%Block{parent: pf} = from, %Block{parent: pt} = to, chain) do
-    {added, removed} = diff(Chain.lookup(chain, pf), Chain.lookup(chain, pt), chain)
-    {added ++ [to], removed ++ [from]}
-  end
-
-  def fetch_missing(nil, _peers, _chain), do: :ok
-
-  def fetch_missing(hash, peers, chain) do
-    unless Chain.lookup(chain, hash) == nil do
-      block =
-        for peer <- peers do
-          Task.async(fn -> GenServer.call(peer, {:fetch, hash}) end)
-        end
-        |> Task.yield_many()
-        |> Enum.find(fn
-          {:ok, %Block{}} -> true
-          _ -> false
-        end)
-
-      unless block == nil do
-        Chain.insert(chain, block)
-        fetch_missing(block.parent, peers, chain)
-
-        for peer <- peers do
-          GenServer.cast(peer, {:insert_block, block})
-        end
-
-        :ok
-      else
-        :err
-      end
-    else
-      :ok
-    end
-  end
-
   def handle_cast(
         {:insert_block, block},
         %{
@@ -180,24 +188,27 @@ defmodule Blockchain.Worker do
           pending: pending,
           accounts: accounts,
           tx_hashes: tx_hashes,
-          peers: peers
+          peers: peers,
+          timer: timer,
+          task: task
         } = state
       ) do
     hash = Block.hash(block)
 
     unless Chain.lookup(chain, hash) != nil do
-      Logger.info("Broadcasting new block #{inspect({self(), block.index})}")
+      Logger.info("Broadcasting new block #{inspect({self(), block.index})}\n#{block}")
 
       for peer <- peers do
         GenServer.cast(peer, {:insert_block, block})
       end
 
-      fetch_missing(hash, peers, chain)
+      :ok = fetch_missing(block.parent, peers, chain)
       Chain.insert(chain, block)
     end
 
     state =
-      if next_index(chain, head) >= block.index do
+      if next_index(chain, head) <= block.index do
+        Logger.info("Accepting new head")
         {added, removed} = diff(Chain.lookup(chain, head), block, chain)
 
         map = fn
@@ -225,81 +236,37 @@ defmodule Blockchain.Worker do
                 state
 
               {accounts, tx_hashes} ->
-                %{state | accounts: accounts, tx_hashes: tx_hashes, head: hash}
+                added_txs =
+                  Enum.reduce(added, [], fn %Block{transactions: txs}, acc -> acc ++ txs end)
+
+                pending =
+                  Enum.reduce(removed, pending, fn %Block{transactions: txs}, p ->
+                    p ++ Enum.filter(txs, &Transaction.is_reward?/1)
+                  end)
+                  |> Enum.reject(fn t_pending ->
+                    Enum.any?(added_txs, fn t_block ->
+                      Transaction.hash(t_block) == Transaction.hash(t_pending)
+                    end)
+                  end)
+
+                %{state | accounts: accounts, tx_hashes: tx_hashes, head: hash, pending: pending}
             end
         end
       else
         state
       end
 
-    {:noreply, state}
-  end
+    if task != nil and Process.alive?(task) do
+      Process.exit(task, :kill)
+    end
 
-  def handle_cast(
-        {:mined, block},
-        %{
-          chain: chain,
-          pending: pending,
-          head: head,
-          timer: timer,
-          accounts: accounts,
-          tx_hashes: tx_hashes,
-          task: task,
-          peers: peers
-        } = state
-      ) do
-    # TODO: timers are not always restarted
-    state =
-      case Transaction.run(accounts, tx_hashes, block.transactions) do
-        {:error, tx} ->
-          Logger.error("Transaction #{tx} is illegal, voiding block")
-          state
-
-        {:ok, accounts, tx_hashes} ->
-          if Chain.valid?(chain, block) do
-            Logger.info("New block mined: #{block}")
-
-            if task != nil and Process.alive?(task) do
-              Process.exit(task, :kill)
-            end
-
-            if timer != nil and Process.read_timer(timer) != false do
-              Process.cancel_timer(timer)
-            end
-
-            Chain.insert(chain, block)
-
-            for peer <- peers do
-              GenServer.cast(peer, {:insert_block, block})
-            end
-
-            timer = Process.send_after(self(), :mine, 10 * 1000)
-
-            head = Block.hash(block)
-
-            # FIXME: something's wrong here.
-            pending =
-              Enum.reject(pending, fn t_pending ->
-                Enum.any?(block.transactions, fn t_block ->
-                  Transaction.hash(t_block) == Transaction.hash(t_pending)
-                end)
-              end)
-
-            %{
-              state
-              | pending: pending,
-                accounts: accounts,
-                tx_hashes: tx_hashes,
-                head: head,
-                timer: timer,
-                task: nil
-            }
-          else
-            Logger.error("Block invalid in chain")
-            state
-          end
+    timer =
+      if timer == nil or Process.read_timer(timer) == false do
+        Process.send_after(self(), :mine, 1000 * 5)
+      else
+        timer
       end
 
-    {:noreply, state}
+    {:noreply, %{state | timer: timer, task: nil}}
   end
 end
