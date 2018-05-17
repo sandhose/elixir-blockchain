@@ -1,11 +1,23 @@
 defmodule Blockchain.Transaction do
   @moduledoc """
   Represents one transaction within the chain.
+
+  There is a special "reward" transaction which has a fixed amount in it, and
+  is sent from a special address. Those are set in the @reward and @rewarder
+  constants.
+
+  The transactions are signed by the sender using the Ed25519 algorithm. This
+  way, transactions can't be modified third parties.
   """
 
   @reward 1.0
   @rewarder <<0::size(256)>>
 
+  @typedoc """
+  A transaction with its sender and recipient address, the amount, the
+  transaction creation timestamp (it doesn't have to be valid, it used to avoid
+  replaying transactions) and the transaction signature.
+  """
   @type t :: %__MODULE__{
           timestamp: integer,
           sender: Ed25519.key(),
@@ -20,6 +32,9 @@ defmodule Blockchain.Transaction do
             amount: 0.0,
             signature: <<0::size(512)>>
 
+  @doc """
+  Create a new transaction and sign it
+  """
   @spec new(
           recipient :: Ed25519.key() | String.t(),
           amount :: float | integer | String.t(),
@@ -69,6 +84,9 @@ defmodule Blockchain.Transaction do
     new(recipient, amount, Base.url_decode64!(priv))
   end
 
+  @doc """
+  The binary payload of the transaction that will be signed
+  """
   @spec payload(transaction :: t()) :: binary
   def payload(%__MODULE__{
         timestamp: timestamp,
@@ -79,17 +97,27 @@ defmodule Blockchain.Transaction do
     <<timestamp::unsigned-little-integer-size(64)>> <> sender <> recipient <> <<amount::float>>
   end
 
+  @doc """
+  Sign a transaction with the given private key
+  """
   @spec sign(transaction :: t(), key :: Ed25519.key()) :: t()
   def sign(transaction, key) do
     signature = Ed25519.signature(payload(transaction), key, transaction.sender)
     %__MODULE__{transaction | signature: signature}
   end
 
+  @doc """
+  Check if a transaction is valid (either the transaction is signed or it is a reward transaction)
+  """
   @spec valid?(transaction :: t()) :: boolean
   def valid?(%__MODULE__{sender: sender, amount: amount, signature: signature} = tx) do
     is_reward?(tx) or (Ed25519.valid_signature?(signature, payload(tx), sender) and amount >= 0)
   end
 
+  @doc """
+  Create a reward transaction for the given recipient
+  """
+  @spec reward(recipient :: Ed25519.key()) :: t()
   def reward(recipient) do
     %__MODULE__{
       timestamp: System.system_time(:nanoseconds),
@@ -99,6 +127,10 @@ defmodule Blockchain.Transaction do
     }
   end
 
+  @doc """
+  Check if a given transaction is a reward
+  """
+  @spec is_reward?(tx :: t()) :: boolean()
   def is_reward?(tx) do
     tx.sender == @rewarder and tx.amount == @reward
   end
@@ -107,6 +139,9 @@ defmodule Blockchain.Transaction do
     Map.drop(accounts, for({acc, amount} <- accounts, amount == 0.0, do: acc))
   end
 
+  @doc """
+  Run a list of transactions on an account and transactions cache
+  """
   @spec run(
           accounts :: %{binary() => float()},
           hashes :: MapSet.t(binary()),
@@ -140,6 +175,9 @@ defmodule Blockchain.Transaction do
     end
   end
 
+  @doc """
+  Rollback a list of transactions on an account and transactions cache
+  """
   @spec rollback(
           accounts :: %{binary() => float()},
           hashes :: MapSet.t(binary()),
@@ -170,6 +208,9 @@ defmodule Blockchain.Transaction do
     end
   end
 
+  @doc """
+  Compute a unique hash for this transaction/transactions list
+  """
   @spec hash(tx :: t() | [t()]) :: binary()
   def hash(tx) do
     :crypto.hash_init(:sha256)

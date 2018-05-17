@@ -44,10 +44,15 @@ defmodule Blockchain.Block do
   @doc """
   Optimize a block by saving the transaction hash inside it
   """
+  @spec optimize(block :: t()) :: t()
   def optimize(block) do
     %__MODULE__{block | tx_hash: Transaction.hash(block.transactions)}
   end
 
+  @doc """
+  Check if a block is valid
+  """
+  @spec valid?(block :: t()) :: boolean
   def valid?(block) do
     proof = valid_proof?(block)
     if not proof, do: Logger.warn("invalid proof")
@@ -87,6 +92,8 @@ defmodule Blockchain.Block do
   defmodule Enum do
     @moduledoc """
     Simple wrapper module to iterate through a Chain
+
+    It's ugly, don't look at that.
     """
 
     alias Blockchain.Block

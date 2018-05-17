@@ -1,4 +1,13 @@
 defmodule Blockchain.Bot do
+  @moduledoc """
+  A simple bot that regularly yields random transactions to contacts he knows
+
+  It needs to be connected to a Worker process, in order to check his balance
+  and queue new transactions
+
+  It holds a public and private key
+  """
+
   use GenServer
   alias Blockchain.Transaction
 
@@ -59,5 +68,6 @@ defmodule Blockchain.Bot do
     {:noreply, %{state | peers: MapSet.put(peers, peer)}}
   end
 
+  # Get the bot public key
   def handle_call(:pub, _from, %{pub: pub} = state), do: {:reply, pub, state}
 end

@@ -1,12 +1,34 @@
 defmodule Blockchain.Worker do
+  @moduledoc """
+  The `Worker` module manages a blockchain and mines on it.
+
+  It holds a cache of the account status, a list of pending transaction, as
+  well as a list of other worker it is connected to.
+  """
+
   use GenServer
   require Logger
 
   alias Blockchain.{Block, Chain, Transaction}
 
+  @typedoc "An account in the cache"
   @type accounts() :: %{Ed25519.key() => float}
+
+  @typedoc "A set of transaction hashes"
   @type tx_hashes() :: MapSet.t(binary())
 
+  @typedoc """
+  The worker state.
+
+  It has:
+    - the chain storage it uses
+    - the list of pending (unconfirmed) transactions
+    - the current head (hash) of the chain
+    - a timer for mining blocks regularly
+    - a map containing the account balance cache
+    - a public address to which the Worker assigns the reward transaction
+    - a list of peers (usually PIDs)
+  """
   @type t() :: %{
           chain: Chain.t(),
           pending: MapSet.t(Transaction.t()),
@@ -20,11 +42,16 @@ defmodule Blockchain.Worker do
         }
 
   def start_link(opts \\ []) do
-    # TODO: worker name is temporary
     GenServer.start_link(__MODULE__, :ok, opts)
   end
 
+  @doc "Get the hash of the block at the head of the chain"
   def head(wrk), do: GenServer.call(wrk, :head)
+
+  @doc """
+  Get the `%Chain{}` structure which holds the whole blockchain (see the
+  Blockchain.Chain module)
+  """
   def chain(wrk), do: GenServer.call(wrk, :chain)
 
   @spec init(:ok) :: {:ok, t()}
@@ -49,6 +76,8 @@ defmodule Blockchain.Worker do
   @doc """
   Get the difference between two blocks in a chain
   """
+  @spec diff(from :: Block.t() | nil, to :: Block.t() | nil, chain :: Chain.t()) ::
+          {[Block.t()], [Block.t()]}
   def diff(from, to, _chain) when from == to do
     {[], []}
   end
@@ -76,6 +105,7 @@ defmodule Blockchain.Worker do
   @doc """
   Fetch the missing blocks from other peers
   """
+  @spec fetch_missing(hash :: Block.h(), peers :: [term()], chain :: Chain.t()) :: :ok | :err
   def fetch_missing(nil, _peers, _chain), do: :ok
   def fetch_missing(<<>>, _peers, _chain), do: :ok
 
@@ -195,6 +225,7 @@ defmodule Blockchain.Worker do
       ) do
     hash = Block.hash(block)
 
+    # Broadcast the block to everyone else, and ask the other peers for the missing blocks
     unless Chain.lookup(chain, hash) != nil do
       Logger.info("Broadcasting new block #{inspect({self(), block.index})}\n#{block}")
 
@@ -206,9 +237,15 @@ defmodule Blockchain.Worker do
       Chain.insert(chain, block)
     end
 
+    # If the block just received is ahead of our current chain, we should
+    # replace our chain head by this block. This will try to apply the
+    # transactions in the new blocks, rewinding the chain if needed before.
     state =
       if next_index(chain, head) <= block.index do
         Logger.info("Accepting new head")
+        # Get the differences between this block and our current head
+        # This returns a list of added blocks, and a list of blocks that should
+        # be reverted.
         {added, removed} = diff(Chain.lookup(chain, head), block, chain)
 
         map = fn
@@ -216,6 +253,7 @@ defmodule Blockchain.Worker do
           {:ok, accounts, tx_hashes} -> {:cont, {accounts, tx_hashes}}
         end
 
+        # First, try to revert the removed blocks
         acc =
           Enum.reduce_while(removed, {accounts, tx_hashes}, fn block, {accounts, tx_hashes} ->
             Transaction.rollback(accounts, tx_hashes, block.transactions) |> map.()
@@ -226,6 +264,7 @@ defmodule Blockchain.Worker do
             state
 
           acc ->
+            # Then, apply the new ones
             acc =
               Enum.reduce_while(added, acc, fn block, {accounts, tx_hashes} ->
                 Transaction.run(accounts, tx_hashes, block.transactions) |> map.()
@@ -236,6 +275,9 @@ defmodule Blockchain.Worker do
                 state
 
               {accounts, tx_hashes} ->
+                # Compute the new pending transaction list, by adding the ones
+                # from the removed blocks, and removing the ones from the added
+                # blocks
                 added_txs =
                   Enum.reduce(added, [], fn %Block{transactions: txs}, acc -> acc ++ txs end)
 
@@ -249,6 +291,7 @@ defmodule Blockchain.Worker do
                     end)
                   end)
 
+                # Everything went as planned, change the head
                 %{
                   state
                   | accounts: accounts,
@@ -262,10 +305,12 @@ defmodule Blockchain.Worker do
         state
       end
 
+    # Kill the old mining task if running
     if task != nil and Process.alive?(task) do
       Process.exit(task, :kill)
     end
 
+    # and start a new timer if the last one expired
     timer =
       if timer == nil or Process.read_timer(timer) == false do
         Process.send_after(self(), :mine, 1000 * 5)
