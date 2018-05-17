@@ -9,7 +9,7 @@ defmodule Blockchain.Worker do
 
   @type t() :: %{
           chain: Chain.t(),
-          pending: [%Transaction{}],
+          pending: MapSet.t(Transaction.t()),
           head: Block.h(),
           timer: reference() | nil,
           accounts: accounts(),
@@ -32,7 +32,7 @@ defmodule Blockchain.Worker do
     {:ok,
      %{
        chain: Chain.new(),
-       pending: [],
+       pending: MapSet.new(),
        head: <<>>,
        timer: nil,
        accounts: %{},
@@ -117,7 +117,7 @@ defmodule Blockchain.Worker do
 
     block = %Block{
       index: next_index(chain, head),
-      transactions: transactions ++ reward,
+      transactions: MapSet.to_list(transactions) ++ reward,
       parent: head
     }
 
@@ -151,11 +151,11 @@ defmodule Blockchain.Worker do
         {:queue, tx},
         %{pending: pending, accounts: accounts, tx_hashes: tx_hashes} = state
       ) do
-    pending = pending ++ [tx]
+    pending = MapSet.put(pending, tx)
 
     # Try to apply pending transactions
     # TODO: log errors
-    case Transaction.run(accounts, tx_hashes, pending) do
+    case Transaction.run(accounts, tx_hashes, MapSet.to_list(pending)) do
       {:error, _} ->
         {:noreply, state}
 
@@ -240,8 +240,8 @@ defmodule Blockchain.Worker do
                   Enum.reduce(added, [], fn %Block{transactions: txs}, acc -> acc ++ txs end)
 
                 pending =
-                  Enum.reduce(removed, pending, fn %Block{transactions: txs}, p ->
-                    p ++ Enum.filter(txs, &Transaction.is_reward?/1)
+                  Enum.reduce(removed, MapSet.to_list(pending), fn %Block{transactions: txs}, p ->
+                    p ++ Enum.reject(txs, &Transaction.is_reward?/1)
                   end)
                   |> Enum.reject(fn t_pending ->
                     Enum.any?(added_txs, fn t_block ->
@@ -249,7 +249,13 @@ defmodule Blockchain.Worker do
                     end)
                   end)
 
-                %{state | accounts: accounts, tx_hashes: tx_hashes, head: hash, pending: pending}
+                %{
+                  state
+                  | accounts: accounts,
+                    tx_hashes: tx_hashes,
+                    head: hash,
+                    pending: MapSet.new(pending)
+                }
             end
         end
       else

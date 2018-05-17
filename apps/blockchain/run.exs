@@ -36,11 +36,3 @@ end
 
 # Start the worker
 GenServer.cast(worker, :start)
-
-# Continue until the worker crashes
-ref = Process.monitor(worker)
-
-receive do
-  {:DOWN, ^ref, _, _, _} ->
-    IO.puts("Worker is down!")
-end
